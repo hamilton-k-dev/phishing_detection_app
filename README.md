@@ -1,36 +1,128 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PhishGuard
+
+A phishing URL detection app built with Next.js. Paste any suspicious link and get an instant risk assessment — no account required to scan.
+
+## Features
+
+- **Instant URL scanning** — heuristic analysis of SSL, domain age patterns, URL structure, suspicious keywords, and brand impersonation
+- **0–100 risk score** — with a per-factor breakdown (safe / suspicious / phishing)
+- **Public scanning** — scan without an account; results are accessible via shareable link
+- **Scan history & dashboard** — sign in to save all scans, view analytics charts, and filter past results
+- **Authentication** — email/password registration and login via better-auth
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 16 (App Router) |
+| Auth | better-auth v1 |
+| Database | Neon PostgreSQL (serverless) |
+| ORM | Prisma 7 with `@prisma/adapter-neon` |
+| Styling | Tailwind CSS v4 |
+| Charts | Recharts |
+| Toasts | Sonner |
 
 ## Getting Started
 
-First, run the development server:
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Configure environment variables
+
+Create a `.env.local` file at the project root:
+
+```env
+DATABASE_URL="postgresql://..."          # pooled Neon connection string
+DATABASE_URL_DIRECT="postgresql://..."   # direct Neon connection string (for migrations)
+BETTER_AUTH_SECRET="your-secret-key"
+BETTER_AUTH_URL="http://localhost:3000"
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
+```
+
+`DATABASE_URL` is used at runtime (pooled). `DATABASE_URL_DIRECT` is used by Prisma CLI for migrations.
+
+### 3. Run database migrations
+
+```bash
+npx prisma migrate deploy
+npx prisma generate
+```
+
+### 4. (Optional) Seed a demo account
+
+```bash
+npx tsx prisma/seed.ts
+```
+
+Creates `demo@phishguard.com` / `demo1234`.
+
+### 5. Start the dev server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Project Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+src/
+├── app/
+│   ├── (auth)/
+│   │   ├── login/          # Sign-in page
+│   │   └── register/       # Registration page
+│   ├── api/
+│   │   ├── auth/           # better-auth handler
+│   │   ├── scan/           # POST /api/scan, GET /api/scan/[id]
+│   │   └── scans/          # GET /api/scans (authenticated history)
+│   ├── dashboard/          # StatsCards, ScanLineChart, ScanPieChart, RecentScans
+│   ├── history/            # Full scan history with filter + search
+│   ├── result/[id]/        # Per-scan result detail page
+│   ├── scan/               # URL input page
+│   ├── LandingPage.tsx     # Public landing page (unauthenticated home)
+│   └── page.tsx            # Root — landing page or dashboard based on auth
+├── components/
+│   ├── DashboardLayout.tsx # Sidebar + top nav (authenticated)
+│   ├── PublicLayout.tsx    # Fixed header with sign-in link (public pages)
+│   ├── Sidebar.tsx
+│   └── TopNav.tsx
+├── lib/
+│   ├── auth.ts             # better-auth server config
+│   ├── auth-client.ts      # better-auth client (signIn, signUp, signOut)
+│   ├── db.ts               # Prisma client with Neon adapter
+│   └── scanner.ts          # Core heuristic analysis engine
+└── proxy.ts                # Route guard (replaces middleware in Next.js 16)
+```
 
-## Learn More
+## How Scanning Works
 
-To learn more about Next.js, take a look at the following resources:
+`src/lib/scanner.ts` runs six checks against any URL:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Check | What it looks for |
+|---|---|
+| **SSL** | Real HTTP HEAD request — valid HTTPS, HTTP only, or cert error |
+| **URL length** | URLs over 60 / 100 chars are progressively flagged |
+| **Keywords** | 30+ phishing terms in path/query; brand names only flagged when impersonating |
+| **Reputation** | IP hostname, suspicious TLD, URL shortener, brand impersonation, `@` redirect trick |
+| **Domain age proxy** | Heuristic patterns common in newly registered phishing domains |
+| **Redirects** | Open redirect params (`url=`, `redirect=`, etc.) and encoded path obfuscation |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The final risk score (0–100) maps to: **< 25 → safe**, **25–64 → suspicious**, **≥ 65 → phishing**.
 
-## Deploy on Vercel
+## Routes
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Path | Access | Description |
+|---|---|---|
+| `/` | Public | Landing page (guests) or dashboard (signed in) |
+| `/scan` | Public | URL scanner |
+| `/result/[id]` | Public | Scan result; guests see a "sign up" banner |
+| `/history` | Auth required | Full scan history with filters |
+| `/login` | Guest only | Sign in |
+| `/register` | Guest only | Create account |
+| `POST /api/scan` | Public | Run a scan |
+| `GET /api/scan/[id]` | Public | Fetch a scan result |
+| `GET /api/scans` | Auth required | Fetch the current user's scan history |

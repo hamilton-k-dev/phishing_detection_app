@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
         url: normalized,
         result: analysis.result,
         riskScore: analysis.riskScore,
-        details: analysis.details as unknown as import('@prisma/client').Prisma.InputJsonValue,
+        details: JSON.parse(JSON.stringify(analysis.details)),
         userId: session?.user?.id ?? null,
       },
     });
